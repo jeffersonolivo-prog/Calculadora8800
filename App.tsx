@@ -544,13 +544,14 @@ interface InputFieldProps {
 
 const InputField: React.FC<InputFieldProps> = ({ label, unit, value, onChange }) => {
   const [displayValue, setDisplayValue] = useState<string>(value.toString());
+  const [isFocused, setIsFocused] = useState(false);
 
-  // Atualiza o valor visual se o valor real mudar externamente (ex: trocar de perfil)
+  // Sincroniza apenas quando não está em foco para não interromper a digitação
   useEffect(() => {
-    if (parseFloat(displayValue) !== value) {
+    if (!isFocused) {
       setDisplayValue(value.toString());
     }
-  }, [value]);
+  }, [value, isFocused]);
 
   return (
     <div className="space-y-1.5 flex-grow">
@@ -558,23 +559,32 @@ const InputField: React.FC<InputFieldProps> = ({ label, unit, value, onChange })
       <div className="relative">
         <input 
           type="text"
+          inputMode="decimal"
           className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
           value={displayValue}
+          onFocus={() => setIsFocused(true)}
           onChange={(e) => {
-            const val = e.target.value.replace(',', '.');
+            let val = e.target.value.replace(',', '.');
+            // Permite digitação de números decimais, negativos e campo vazio
             if (val === '' || val === '-' || val === '.' || /^-?\d*\.?\d*$/.test(val)) {
               setDisplayValue(val);
               const parsed = parseFloat(val);
               if (!isNaN(parsed)) {
                 onChange(parsed);
-              } else {
+              } else if (val === '') {
                 onChange(0);
               }
             }
           }}
           onBlur={() => {
-            // No blur, limpa formatos inválidos e garante sincronia com o estado numérico
+            setIsFocused(false);
+            // Garante que o valor exibido seja um número válido ao sair
             setDisplayValue(value.toString());
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              (e.target as HTMLInputElement).blur();
+            }
           }}
         />
         <span className="absolute right-2 top-2.5 text-[10px] font-bold text-slate-300 uppercase pointer-events-none">{unit}</span>
@@ -590,31 +600,42 @@ interface DimensionInputProps {
 
 const DimensionInput: React.FC<DimensionInputProps> = ({ value, onChange }) => {
   const [displayValue, setDisplayValue] = useState<string>(value.toString());
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (parseFloat(displayValue) !== value) {
+    if (!isFocused) {
       setDisplayValue(value.toString());
     }
-  }, [value]);
+  }, [value, isFocused]);
 
   return (
     <input 
       type="text"
+      inputMode="decimal"
       className="flex-grow p-1.5 bg-white border border-slate-200 rounded text-xs font-mono text-center outline-none focus:ring-1 focus:ring-blue-400"
       value={displayValue}
+      onFocus={() => setIsFocused(true)}
       onChange={(e) => {
-        const val = e.target.value.replace(',', '.');
+        let val = e.target.value.replace(',', '.');
         if (val === '' || val === '.' || /^\d*\.?\d*$/.test(val)) {
           setDisplayValue(val);
           const parsed = parseFloat(val);
           if (!isNaN(parsed)) {
             onChange(parsed);
-          } else {
+          } else if (val === '') {
             onChange(0);
           }
         }
       }}
-      onBlur={() => setDisplayValue(value.toString())}
+      onBlur={() => {
+        setIsFocused(false);
+        setDisplayValue(value.toString());
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
     />
   );
 };
