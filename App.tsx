@@ -7,10 +7,12 @@ import {
   AlertCircle,
   ExternalLink,
   Settings2,
-  Info
+  Info,
+  FileDown
 } from 'lucide-react';
 import { ModuleType, SupportCondition, CalculationResult, ProfileType } from './types';
 import { STANDARD_PROFILES, calculateProperties } from './profiles';
+import { jsPDF } from 'jspdf';
 
 const CTA_LINK = "https://wa.me/558189727744";
 const G = 0.00980665; // Fator de conversão kgf para kN (9.81 / 1000)
@@ -187,7 +189,7 @@ const App: React.FC = () => {
     setSelectedProfileId('custom');
   };
 
-  const { ix, rmin } = useMemo(() => calculateProperties(profileType, customDims), [profileType, customDims]);
+  const { ix, rmin, area } = useMemo(() => calculateProperties(profileType, customDims), [profileType, customDims]);
 
   // Cálculos convertendo kg para kN
   const beamResult = useMemo((): CalculationResult => {
@@ -233,6 +235,96 @@ const App: React.FC = () => {
   }, [L, rmin, K, axialNkg]);
 
   const activeResult = activeModule === ModuleType.BEAM ? beamResult : columnResult;
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    const margin = 20;
+    let y = margin;
+
+    // Header
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Memorial de Cálculo Estrutural - NBR 8800', margin, y);
+    y += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Gerado em: ${new Date().toLocaleString()}`, margin, y);
+    y += 15;
+
+    // Seção: Identificação
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Módulo: ${activeModule === ModuleType.BEAM ? 'Verificação de Viga (Flecha)' : 'Verificação de Coluna (Flambagem)'}`, margin, y);
+    y += 10;
+
+    // Seção: Perfil
+    doc.setFontSize(12);
+    doc.text('1. Dados do Perfil e Propriedades de Seção', margin, y);
+    y += 7;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Tipo de Perfil: ${profileType.replace('_', ' ').toUpperCase()}`, margin + 5, y); y += 5;
+    doc.text(`Bitola: ${selectedProfileId === 'custom' ? 'Personalizada' : (STANDARD_PROFILES[profileType].find(p => p.id === selectedProfileId)?.name || 'N/A')}`, margin + 5, y); y += 5;
+    
+    const dimsStr = Object.entries(customDims).map(([k, v]) => `${k}=${v}cm`).join(', ');
+    doc.text(`Dimensões: ${dimsStr}`, margin + 5, y); y += 5;
+    doc.text(`Área de Seção: ${area.toFixed(2)} cm²`, margin + 5, y); y += 5;
+    doc.text(`Inércia Ix: ${ix.toFixed(2)} cm⁴`, margin + 5, y); y += 5;
+    doc.text(`Raio de Giração rmin: ${rmin.toFixed(3)} cm`, margin + 5, y); y += 10;
+
+    // Seção: Geometria e Cargas
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('2. Geometria e Carregamento', margin, y);
+    y += 7;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${activeModule === ModuleType.BEAM ? 'Vão Livre (L)' : 'Altura (H)'}: ${L.toFixed(2)} m`, margin + 5, y); y += 5;
+    doc.text(`Módulo de Elasticidade (E): ${E} MPa`, margin + 5, y); y += 5;
+    
+    if (activeModule === ModuleType.BEAM) {
+      doc.text(`Carga Distribuída (q): ${Qkg.toFixed(2)} kg/m`, margin + 5, y); y += 5;
+      doc.text(`Carga Concentrada (P): ${Pkg.toFixed(2)} kg`, margin + 5, y); y += 5;
+      doc.text(`Posição da Carga P (a): ${posA.toFixed(2)} m`, margin + 5, y); y += 5;
+    } else {
+      doc.text(`Força Axial de Compressão (N): ${axialNkg.toFixed(2)} kg`, margin + 5, y); y += 5;
+      doc.text(`Fator de Comprimento Efetivo (K): ${K}`, margin + 5, y); y += 5;
+    }
+    y += 10;
+
+    // Seção: Verificação
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('3. Verificação de Segurança', margin, y);
+    y += 7;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Valor Calculado (${activeModule === ModuleType.BEAM ? 'Flecha cm' : 'Esbeltez λ'}): ${activeResult.value.toFixed(2)}`, margin + 5, y); y += 5;
+    doc.text(`Limite Normativo NBR 8800: ${activeResult.limit.toFixed(2)}`, margin + 5, y); y += 10;
+
+    // Resultado Final
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    const color = activeResult.isApproved ? [16, 185, 129] : [244, 63, 94]; // emerald-500 : rose-500
+    doc.setTextColor(color[0], color[1], color[2]);
+    doc.text(`STATUS FINAL: ${activeResult.message}`, margin, y);
+    y += 8;
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // slate-500
+    doc.text(`Recomendação: ${activeResult.recommendation}`, margin, y, { maxWidth: 170 });
+    y += 20;
+
+    // CTA
+    doc.setTextColor(59, 130, 246); // blue-500
+    doc.setFontSize(11);
+    doc.text('Dúvidas no dimensionamento? Fale com o especialista no WhatsApp:', margin, y);
+    y += 7;
+    doc.text('55 (81) 8972-7744', margin, y);
+
+    // Save
+    doc.save(`Memorial_Calculo_${activeModule}_${Date.now()}.pdf`);
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 pb-12 font-sans text-slate-900">
@@ -406,18 +498,29 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-              {!activeResult.isApproved && (
-                <div className="w-full bg-slate-900 rounded-2xl p-6 shadow-2xl text-white mt-4 border-b-4 border-blue-600">
-                  <h3 className="font-bold text-base mb-2">Projeto Reprovado?</h3>
-                  <p className="text-slate-400 text-[11px] mb-6 leading-relaxed">
-                    Dimensionar estruturas metálicas exige precisão. Evite erros caros e fale agora mesmo com um de nossos especialistas.
-                  </p>
-                  <a href={CTA_LINK} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-xs hover:bg-blue-500 transition-all shadow-lg active:scale-95">
-                    Falar com especialista
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              )}
+
+              <div className="w-full flex flex-col gap-3 mt-4">
+                <button 
+                  onClick={exportPDF}
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 transition-all border border-slate-200 active:scale-95"
+                >
+                  <FileDown className="w-4 h-4" />
+                  Exportar Memorial (PDF)
+                </button>
+
+                {!activeResult.isApproved && (
+                  <div className="w-full bg-slate-900 rounded-2xl p-6 shadow-2xl text-white border-b-4 border-blue-600">
+                    <h3 className="font-bold text-base mb-2">Projeto Reprovado?</h3>
+                    <p className="text-slate-400 text-[11px] mb-6 leading-relaxed">
+                      Dimensionar estruturas metálicas exige precisão. Evite erros caros e fale agora mesmo com um de nossos especialistas.
+                    </p>
+                    <a href={CTA_LINK} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-xs hover:bg-blue-500 transition-all shadow-lg active:scale-95">
+                      Falar com especialista
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         </div>
