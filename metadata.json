@@ -1,0 +1,5 @@
+{
+  "name": "Calculadora Estrutural NBR 8800",
+  "description": "Calculadora técnica para verificação de flechas em vigas e flambagem em colunas metálicas seguindo os critérios da NBR 8800, ideal para projetistas de estruturas metálicas e usuários de SolidWorks.",
+  "requestFramePermissions": []
+}
