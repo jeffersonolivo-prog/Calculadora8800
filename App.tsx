@@ -266,8 +266,8 @@ const App: React.FC = () => {
     doc.text(`Tipo de Perfil: ${profileType.replace('_', ' ').toUpperCase()}`, margin + 5, y); y += 5;
     doc.text(`Bitola: ${selectedProfileId === 'custom' ? 'Personalizada' : (STANDARD_PROFILES[profileType].find(p => p.id === selectedProfileId)?.name || 'N/A')}`, margin + 5, y); y += 5;
     
-    const dimsStr = Object.entries(customDims).map(([k, v]) => `${k}=${v}cm`).join(', ');
-    doc.text(`Dimensões: ${dimsStr}`, margin + 5, y); y += 5;
+    const dimsStr = Object.entries(customDims).map(([k, v]) => `${k}=${v}mm`).join(', ');
+    doc.text(`Dimensões de Entrada: ${dimsStr}`, margin + 5, y); y += 5;
     doc.text(`Área de Seção: ${area.toFixed(2)} cm²`, margin + 5, y); y += 5;
     doc.text(`Inércia Ix: ${ix.toFixed(2)} cm⁴`, margin + 5, y); y += 5;
     doc.text(`Raio de Giração rmin: ${rmin.toFixed(3)} cm`, margin + 5, y); y += 10;
@@ -396,7 +396,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Dimensões Reais (cm)</h3>
+                  <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Dimensões Reais (mm)</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {Object.entries(customDims).map(([dim, val]) => (
                       <div key={dim} className="flex items-center gap-2">
