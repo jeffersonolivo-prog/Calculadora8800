@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Calculator, 
   Construction, 
@@ -401,11 +401,9 @@ const App: React.FC = () => {
                     {Object.entries(customDims).map(([dim, val]) => (
                       <div key={dim} className="flex items-center gap-2">
                         <label className="w-8 text-[10px] font-black text-slate-400 uppercase text-left">{dim}</label>
-                        <input 
-                          type="number" step="0.01"
-                          className="flex-grow p-1.5 bg-white border border-slate-200 rounded text-xs font-mono text-center outline-none focus:ring-1 focus:ring-blue-400"
+                        <DimensionInput 
                           value={val}
-                          onChange={(e) => handleDimChange(dim, parseFloat(e.target.value) || 0)}
+                          onChange={(newVal) => handleDimChange(dim, newVal)}
                         />
                       </div>
                     ))}
@@ -544,19 +542,81 @@ interface InputFieldProps {
   onChange: (val: number) => void;
 }
 
-const InputField: React.FC<InputFieldProps> = ({ label, unit, value, onChange }) => (
-  <div className="space-y-1.5 flex-grow">
-    <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block">{label}</label>
-    <div className="relative">
-      <input 
-        type="number" step="0.01"
-        className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-      />
-      <span className="absolute right-2 top-2.5 text-[10px] font-bold text-slate-300 uppercase pointer-events-none">{unit}</span>
+const InputField: React.FC<InputFieldProps> = ({ label, unit, value, onChange }) => {
+  const [displayValue, setDisplayValue] = useState<string>(value.toString());
+
+  // Atualiza o valor visual se o valor real mudar externamente (ex: trocar de perfil)
+  useEffect(() => {
+    if (parseFloat(displayValue) !== value) {
+      setDisplayValue(value.toString());
+    }
+  }, [value]);
+
+  return (
+    <div className="space-y-1.5 flex-grow">
+      <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block">{label}</label>
+      <div className="relative">
+        <input 
+          type="text"
+          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+          value={displayValue}
+          onChange={(e) => {
+            const val = e.target.value.replace(',', '.');
+            if (val === '' || val === '-' || val === '.' || /^-?\d*\.?\d*$/.test(val)) {
+              setDisplayValue(val);
+              const parsed = parseFloat(val);
+              if (!isNaN(parsed)) {
+                onChange(parsed);
+              } else {
+                onChange(0);
+              }
+            }
+          }}
+          onBlur={() => {
+            // No blur, limpa formatos inválidos e garante sincronia com o estado numérico
+            setDisplayValue(value.toString());
+          }}
+        />
+        <span className="absolute right-2 top-2.5 text-[10px] font-bold text-slate-300 uppercase pointer-events-none">{unit}</span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
+
+interface DimensionInputProps {
+  value: number;
+  onChange: (val: number) => void;
+}
+
+const DimensionInput: React.FC<DimensionInputProps> = ({ value, onChange }) => {
+  const [displayValue, setDisplayValue] = useState<string>(value.toString());
+
+  useEffect(() => {
+    if (parseFloat(displayValue) !== value) {
+      setDisplayValue(value.toString());
+    }
+  }, [value]);
+
+  return (
+    <input 
+      type="text"
+      className="flex-grow p-1.5 bg-white border border-slate-200 rounded text-xs font-mono text-center outline-none focus:ring-1 focus:ring-blue-400"
+      value={displayValue}
+      onChange={(e) => {
+        const val = e.target.value.replace(',', '.');
+        if (val === '' || val === '.' || /^\d*\.?\d*$/.test(val)) {
+          setDisplayValue(val);
+          const parsed = parseFloat(val);
+          if (!isNaN(parsed)) {
+            onChange(parsed);
+          } else {
+            onChange(0);
+          }
+        }
+      }}
+      onBlur={() => setDisplayValue(value.toString())}
+    />
+  );
+};
 
 export default App;
