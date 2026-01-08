@@ -8,7 +8,8 @@ import {
   ExternalLink,
   Settings2,
   Info,
-  FileDown
+  FileDown,
+  Weight
 } from 'lucide-react';
 import { ModuleType, SupportCondition, CalculationResult, ProfileType } from './types';
 import { STANDARD_PROFILES, calculateProperties } from './profiles';
@@ -16,9 +17,10 @@ import { jsPDF } from 'jspdf';
 
 const CTA_LINK = "https://wa.me/558189727744";
 const G = 0.00980665; // Fator de conversão kgf para kN (9.81 / 1000)
+const STEEL_DENSITY = 0.785; // kg/m por cm² de área (7850 kg/m³)
 
 // Componente para renderizar o diagrama do carregamento
-const LoadingDiagram: React.FC<{ module: ModuleType; L: number; q: number; P: number; a: number; N: number }> = ({ module, L, q, P, a, N }) => {
+const LoadingDiagram: React.FC<{ module: ModuleType; L: number; q: number; P: number; a: number; N: number; selfWeight: number }> = ({ module, L, q, P, a, N, selfWeight }) => {
   const strokeColor = "#3b82f6"; // blue-500
   const textColor = "#64748b"; // slate-500
   const arrowColor = "#ef4444"; // rose-500
@@ -33,13 +35,13 @@ const LoadingDiagram: React.FC<{ module: ModuleType; L: number; q: number; P: nu
           <path d="M88 35 L92 40 L88 40 Z" fill="#1e293b" />
           <line x1="5" y1="40" x2="15" y2="40" stroke="#1e293b" strokeWidth="1" />
           <line x1="85" y1="40" x2="95" y2="40" stroke="#1e293b" strokeWidth="1" />
-          {q > 0 && (
+          {(q > 0 || selfWeight > 0) && (
             <g>
               <line x1="10" y1="20" x2="90" y2="20" stroke={strokeColor} strokeWidth="0.5" strokeDasharray="1" opacity="0.5" />
               {[10, 26, 42, 58, 74, 90].map((x) => (
                 <path key={x} d={`M${x} 20 L${x} 32 M${x} 32 L${x-1.5} 30 M${x} 32 L${x+1.5} 30`} stroke={strokeColor} strokeWidth="1" fill="none" />
               ))}
-              <text x="50" y="15" textAnchor="middle" fontSize="5" fontWeight="bold" fill={strokeColor}>q (kg/m)</text>
+              <text x="50" y="15" textAnchor="middle" fontSize="5" fontWeight="bold" fill={strokeColor}>q total (Carga + Peso Próprio)</text>
             </g>
           )}
           {P > 0 && (
@@ -60,7 +62,7 @@ const LoadingDiagram: React.FC<{ module: ModuleType; L: number; q: number; P: nu
             </g>
           )}
         </svg>
-        <div className="absolute bottom-2 right-2 text-[8px] text-slate-400 font-mono italic">Diagrama de Viga</div>
+        <div className="absolute bottom-2 right-2 text-[8px] text-slate-400 font-mono italic">Diagrama de Viga (Peso Próprio Incluso)</div>
       </div>
     );
   }
@@ -191,12 +193,16 @@ const App: React.FC = () => {
 
   const { ix, rmin, area } = useMemo(() => calculateProperties(profileType, customDims), [profileType, customDims]);
 
+  // Peso próprio em kg/m
+  const selfWeightKgM = useMemo(() => area * STEEL_DENSITY, [area]);
+
   // Cálculos convertendo kg para kN
   const beamResult = useMemo((): CalculationResult => {
-    const Q_kN = Qkg * G;
+    // Soma carga inserida + peso próprio
+    const Q_total_kN = (Qkg + selfWeightKgM) * G;
     const P_kN = Pkg * G;
 
-    const deltaQ = (5 * Q_kN * Math.pow(L, 4) * 100000) / (384 * E * ix);
+    const deltaQ = (5 * Q_total_kN * Math.pow(L, 4) * 100000) / (384 * E * ix);
     let deltaP = 0;
     if (P_kN > 0) {
       const a = Math.min(posA, L);
@@ -214,10 +220,10 @@ const App: React.FC = () => {
       limit,
       message: isApproved ? "APROVADO" : "REPROVADO",
       recommendation: isApproved 
-        ? "Flecha total dentro do limite normativo L/250." 
+        ? "Flecha total (incluindo peso próprio) dentro do limite L/250." 
         : "A estrutura excedeu o limite de serviço. Aumente o perfil ou reduza o vão."
     };
-  }, [L, E, ix, Qkg, Pkg, posA]);
+  }, [L, E, ix, Qkg, Pkg, posA, selfWeightKgM]);
 
   const columnResult = useMemo((): CalculationResult => {
     const lambda = (K * L * 100) / rmin;
@@ -269,6 +275,7 @@ const App: React.FC = () => {
     const dimsStr = Object.entries(customDims).map(([k, v]) => `${k}=${v}mm`).join(', ');
     doc.text(`Dimensões de Entrada: ${dimsStr}`, margin + 5, y); y += 5;
     doc.text(`Área de Seção: ${area.toFixed(2)} cm²`, margin + 5, y); y += 5;
+    doc.text(`Peso Próprio do Perfil: ${selfWeightKgM.toFixed(2)} kg/m`, margin + 5, y); y += 5;
     doc.text(`Inércia Ix: ${ix.toFixed(2)} cm⁴`, margin + 5, y); y += 5;
     doc.text(`Raio de Giração rmin: ${rmin.toFixed(3)} cm`, margin + 5, y); y += 10;
 
@@ -283,7 +290,8 @@ const App: React.FC = () => {
     doc.text(`Módulo de Elasticidade (E): ${E} MPa`, margin + 5, y); y += 5;
     
     if (activeModule === ModuleType.BEAM) {
-      doc.text(`Carga Distribuída (q): ${Qkg.toFixed(2)} kg/m`, margin + 5, y); y += 5;
+      doc.text(`Carga Distribuída Aplicada (q): ${Qkg.toFixed(2)} kg/m`, margin + 5, y); y += 5;
+      doc.text(`Peso Próprio Considerado: ${selfWeightKgM.toFixed(2)} kg/m`, margin + 5, y); y += 5;
       doc.text(`Carga Concentrada (P): ${Pkg.toFixed(2)} kg`, margin + 5, y); y += 5;
       doc.text(`Posição da Carga P (a): ${posA.toFixed(2)} m`, margin + 5, y); y += 5;
     } else {
@@ -360,10 +368,16 @@ const App: React.FC = () => {
         <div className="lg:col-span-8 space-y-6">
           {/* Seção 1: Perfil */}
           <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800 mb-6">
-              <Settings2 className="w-5 h-5 text-blue-600" />
-              1. Especificação do Perfil
-            </h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800">
+                <Settings2 className="w-5 h-5 text-blue-600" />
+                1. Especificação do Perfil
+              </h2>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
+                <Weight className="w-3.5 h-3.5 text-slate-500" />
+                <span className="text-[10px] font-bold text-slate-600 uppercase">P. Próprio: {selfWeightKgM.toFixed(2)} kg/m</span>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="space-y-4">
@@ -432,13 +446,19 @@ const App: React.FC = () => {
               <Calculator className="w-5 h-5 text-blue-600" />
               2. Geometria e Carregamento
             </h2>
-            <LoadingDiagram module={activeModule} L={L} q={Qkg} P={Pkg} a={posA} N={axialNkg} />
+            <LoadingDiagram module={activeModule} L={L} q={Qkg} P={Pkg} a={posA} N={axialNkg} selfWeight={selfWeightKgM} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
               <InputField label={activeModule === ModuleType.BEAM ? "Vão Livre (L)" : "Altura da Coluna (H)"} unit="m" value={L} onChange={setL} />
               <InputField label="Módulo Elasticidade (E)" unit="MPa" value={E} onChange={setE} />
               {activeModule === ModuleType.BEAM ? (
-                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
-                  <InputField label="Carga Distribuída (q)" unit="kg/m" value={Qkg} onChange={setQkg} />
+                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100 relative">
+                  <div className="md:col-span-1">
+                    <InputField label="Carga Distribuída (q)" unit="kg/m" value={Qkg} onChange={setQkg} />
+                    <p className="mt-1.5 text-[9px] text-blue-600 font-bold uppercase flex items-center gap-1">
+                      <Info className="w-3 h-3" />
+                      Peso Próprio ({selfWeightKgM.toFixed(2)} kg/m) Incluso
+                    </p>
+                  </div>
                   <InputField label="Carga Concentrada (P)" unit="kg" value={Pkg} onChange={setPkg} />
                   <InputField label="Posição Carga (a)" unit="m" value={posA} onChange={setPosA} />
                 </div>
@@ -546,12 +566,31 @@ const InputField: React.FC<InputFieldProps> = ({ label, unit, value, onChange })
   const [displayValue, setDisplayValue] = useState<string>(value.toString());
   const [isFocused, setIsFocused] = useState(false);
 
-  // Sincroniza apenas quando não está em foco para não interromper a digitação
   useEffect(() => {
     if (!isFocused) {
       setDisplayValue(value.toString());
     }
   }, [value, isFocused]);
+
+  const handleInputChange = (val: string) => {
+    val = val.replace(',', '.');
+    
+    // Filtro para permitir apenas números e decimais
+    if (val === '' || val === '-' || val === '.' || /^-?\d*\.?\d*$/.test(val)) {
+      // Correção do Bug do Zero: Remove zero à esquerda se não for decimal (ex: de '05' para '5')
+      if (val.length > 1 && val.startsWith('0') && val[1] !== '.') {
+        val = val.substring(1);
+      }
+      
+      setDisplayValue(val);
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed)) {
+        onChange(parsed);
+      } else if (val === '' || val === '-') {
+        onChange(0);
+      }
+    }
+  };
 
   return (
     <div className="space-y-1.5 flex-grow">
@@ -563,22 +602,9 @@ const InputField: React.FC<InputFieldProps> = ({ label, unit, value, onChange })
           className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
           value={displayValue}
           onFocus={() => setIsFocused(true)}
-          onChange={(e) => {
-            let val = e.target.value.replace(',', '.');
-            // Permite digitação de números decimais, negativos e campo vazio
-            if (val === '' || val === '-' || val === '.' || /^-?\d*\.?\d*$/.test(val)) {
-              setDisplayValue(val);
-              const parsed = parseFloat(val);
-              if (!isNaN(parsed)) {
-                onChange(parsed);
-              } else if (val === '') {
-                onChange(0);
-              }
-            }
-          }}
+          onChange={(e) => handleInputChange(e.target.value)}
           onBlur={() => {
             setIsFocused(false);
-            // Garante que o valor exibido seja um número válido ao sair
             setDisplayValue(value.toString());
           }}
           onKeyDown={(e) => {
@@ -608,6 +634,24 @@ const DimensionInput: React.FC<DimensionInputProps> = ({ value, onChange }) => {
     }
   }, [value, isFocused]);
 
+  const handleInputChange = (val: string) => {
+    val = val.replace(',', '.');
+    if (val === '' || val === '.' || /^\d*\.?\d*$/.test(val)) {
+      // Correção do Bug do Zero:
+      if (val.length > 1 && val.startsWith('0') && val[1] !== '.') {
+        val = val.substring(1);
+      }
+      
+      setDisplayValue(val);
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed)) {
+        onChange(parsed);
+      } else if (val === '') {
+        onChange(0);
+      }
+    }
+  };
+
   return (
     <input 
       type="text"
@@ -615,18 +659,7 @@ const DimensionInput: React.FC<DimensionInputProps> = ({ value, onChange }) => {
       className="flex-grow p-1.5 bg-white border border-slate-200 rounded text-xs font-mono text-center outline-none focus:ring-1 focus:ring-blue-400"
       value={displayValue}
       onFocus={() => setIsFocused(true)}
-      onChange={(e) => {
-        let val = e.target.value.replace(',', '.');
-        if (val === '' || val === '.' || /^\d*\.?\d*$/.test(val)) {
-          setDisplayValue(val);
-          const parsed = parseFloat(val);
-          if (!isNaN(parsed)) {
-            onChange(parsed);
-          } else if (val === '') {
-            onChange(0);
-          }
-        }
-      }}
+      onChange={(e) => handleInputChange(e.target.value)}
       onBlur={() => {
         setIsFocused(false);
         setDisplayValue(value.toString());
